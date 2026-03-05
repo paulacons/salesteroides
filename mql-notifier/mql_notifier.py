@@ -140,7 +140,7 @@ def get_owners():
 # ---------------------------------------------------------------------------
 
 def search_mqls():
-    """Devuelve lista de contactos con hs_lead_status = MQL."""
+    """Devuelve lista de contactos con hs_lead_status = MQL y sin contactar."""
     contacts = []
     after = 0
     body = {
@@ -151,7 +151,12 @@ def search_mqls():
                         "propertyName": "hs_lead_status",
                         "operator": "EQ",
                         "value": "MQL",
-                    }
+                    },
+                    {
+                        "propertyName": "num_contacted_notes",
+                        "operator": "EQ",
+                        "value": "0",
+                    },
                 ]
             }
         ],
@@ -171,31 +176,6 @@ def search_mqls():
             break
 
     return contacts
-
-# ---------------------------------------------------------------------------
-# HubSpot: comprobar llamadas asociadas a un contacto
-# ---------------------------------------------------------------------------
-
-def contact_has_calls(contact_id):
-    """Devuelve True si el contacto tiene al menos un engagement de tipo CALL.
-
-    Usa la Engagements API v1, que NO requiere scope de calls.
-    Solo necesita crm.objects.contacts.read.
-    """
-    url = (
-        f"https://api.hubapi.com/engagements/v1/engagements/associated/CONTACT"
-        f"/{contact_id}/paged"
-    )
-    try:
-        data = hubspot_get(url, {"limit": 100})
-        for eng in data.get("results", []):
-            if eng.get("engagement", {}).get("type") == "CALL":
-                return True
-        return False
-    except HTTPError as e:
-        if e.code == 404:
-            return False
-        raise
 
 # ---------------------------------------------------------------------------
 # Formatear mensaje Slack
@@ -295,8 +275,7 @@ def main():
     mqls = search_mqls()
     log.info("Total MQLs encontrados: %d", len(mqls))
 
-    # 3. Filtrar: solo owners permitidos y sin llamadas
-    # Construir set de owner_ids permitidos
+    # 3. Filtrar solo owners permitidos
     allowed_ids = set()
     for oid, name in owners.items():
         if name in ALLOWED_OWNERS:
@@ -307,15 +286,8 @@ def main():
     for contact in mqls:
         props = contact.get("properties", {})
         owner_id = props.get("hubspot_owner_id") or None
-        # Solo procesar contactos de owners permitidos
         if owner_id not in allowed_ids:
             continue
-
-        cid = contact["id"]
-        has_calls = contact_has_calls(cid)
-        if has_calls:
-            continue
-
         grouped.setdefault(owner_id, []).append(contact)
 
     no_call_total = sum(len(v) for v in grouped.values())
