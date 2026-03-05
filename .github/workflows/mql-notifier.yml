@@ -1,4 +1,4 @@
- name: MQL Notifier — Slack diario
+name: MQL Notifier
 
   on:
     schedule:
