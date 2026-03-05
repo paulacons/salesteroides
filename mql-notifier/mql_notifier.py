@@ -30,6 +30,17 @@ API_DELAY = 0.15  # 150 ms entre llamadas a HubSpot
 
 MADRID_TZ = timezone(timedelta(hours=1))  # CET base — se ajusta abajo
 
+# Solo mostrar estos SDRs en el reporte
+ALLOWED_OWNERS = {
+    "Gelia Pereira",
+    "Santiago Rodríguez",
+    "Carmen Báscones",
+    "Paula Serrats",
+    "Lucas Abad Revert",
+    "Álvaro Cabal García",
+    "Jorge Latorre Escudero",
+}
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -282,16 +293,27 @@ def main():
     mqls = search_mqls()
     log.info("Total MQLs encontrados: %d", len(mqls))
 
-    # 3. Filtrar los que NO tienen llamadas
+    # 3. Filtrar: solo owners permitidos y sin llamadas
+    # Construir set de owner_ids permitidos
+    allowed_ids = set()
+    for oid, name in owners.items():
+        if name in ALLOWED_OWNERS:
+            allowed_ids.add(oid)
+    log.info("Owners filtrados: %s", {oid: owners[oid] for oid in allowed_ids})
+
     grouped = {}  # owner_id -> [contacts]
     for contact in mqls:
+        props = contact.get("properties", {})
+        owner_id = props.get("hubspot_owner_id") or None
+        # Solo procesar contactos de owners permitidos
+        if owner_id not in allowed_ids:
+            continue
+
         cid = contact["id"]
         has_calls = contact_has_calls(cid)
         if has_calls:
             continue
 
-        props = contact.get("properties", {})
-        owner_id = props.get("hubspot_owner_id") or None
         grouped.setdefault(owner_id, []).append(contact)
 
     no_call_total = sum(len(v) for v in grouped.values())
