@@ -231,6 +231,8 @@ def build_message(grouped, owners, today_str):
         lines.append(f"{emoji} *{name}*: {count} MQLs sin llamar")
 
     lines.append("")
+    lines.append("<https://app.hubspot.com/contacts/20392666/objects/0-1/views/61811688/list|Ver en HubSpot>")
+    lines.append("")
     lines.append("_Datos: HubSpot · hs_lead_status = MQL · sin actividad de llamada_")
     lines.append("\U0001f534 \u226510 · \U0001f7e1 \u22655 · \U0001f7e2 <5")
 
