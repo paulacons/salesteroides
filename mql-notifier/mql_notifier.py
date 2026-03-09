@@ -44,9 +44,9 @@ ALLOWED_OWNERS = {
 
 # Owners de Partnerships
 PARTNERSHIPS_OWNERS = {
-    "Tomas Lemus",
+    "Tomás Lemus",
     "Laszlo Bene",
-    "Francisco Gost",
+    "Francisco Gost Scagliarini",
 }
 
 logging.basicConfig(
@@ -148,8 +148,8 @@ def get_owners():
 # ---------------------------------------------------------------------------
 
 def search_mqls():
-    """Devuelve lista de contactos con hs_lead_status = MQL y sin contactar."""
-    contacts = []
+    """Devuelve lista de contactos MQL sin contactar desde su MQL date."""
+    all_mqls = []
     after = 0
     body = {
         "filterGroups": [
@@ -160,15 +160,14 @@ def search_mqls():
                         "operator": "EQ",
                         "value": "MQL",
                     },
-                    {
-                        "propertyName": "num_contacted_notes",
-                        "operator": "EQ",
-                        "value": "0",
-                    },
                 ]
             }
         ],
-        "properties": ["firstname", "lastname", "email", "hubspot_owner_id"],
+        "properties": [
+            "firstname", "lastname", "email", "hubspot_owner_id",
+            "notes_last_contacted",
+            "hs_lifecyclestage_marketingqualifiedlead_date",
+        ],
         "limit": PAGE_SIZE,
     }
 
@@ -177,13 +176,38 @@ def search_mqls():
             body["after"] = after
         data = hubspot_post(HUBSPOT_SEARCH_URL, body)
         results = data.get("results", [])
-        contacts.extend(results)
-        log.info("MQLs obtenidos: %d (acumulado: %d)", len(results), len(contacts))
+        all_mqls.extend(results)
+        log.info("MQLs obtenidos: %d (acumulado: %d)", len(results), len(all_mqls))
         after = data.get("paging", {}).get("next", {}).get("after")
         if not after:
             break
 
-    return contacts
+    # Filtrar: sin contacto desde la MQL date
+    pending = []
+    for contact in all_mqls:
+        props = contact.get("properties", {})
+        mql_date_str = props.get("hs_lifecyclestage_marketingqualifiedlead_date")
+        last_contacted_str = props.get("notes_last_contacted")
+
+        if not mql_date_str:
+            continue
+
+        # Sin contacto nunca → pendiente
+        if not last_contacted_str:
+            pending.append(contact)
+            continue
+
+        # Comparar fechas: si último contacto es anterior a MQL date → pendiente
+        try:
+            mql_date = datetime.fromisoformat(mql_date_str.replace("Z", "+00:00"))
+            last_contacted = datetime.fromisoformat(last_contacted_str.replace("Z", "+00:00"))
+            if last_contacted < mql_date:
+                pending.append(contact)
+        except (ValueError, TypeError):
+            pending.append(contact)
+
+    log.info("MQLs sin contacto desde MQL date: %d / %d", len(pending), len(all_mqls))
+    return pending
 
 # ---------------------------------------------------------------------------
 # Formatear mensaje Slack
@@ -221,7 +245,7 @@ def build_message(grouped, owners, today_str):
     lines.append("")
     lines.append("<https://app.hubspot.com/contacts/20392666/objects/0-1/views/61811688/list|Ver en HubSpot>")
     lines.append("")
-    lines.append("_Datos: HubSpot · hs_lead_status = MQL · sin actividad de llamada_")
+    lines.append("_Datos: HubSpot · hs_lead_status = MQL · sin contacto desde MQL date_")
     lines.append("\U0001f534 \u226510 · \U0001f7e1 \u22655 · \U0001f7e2 <5")
 
     return "\n".join(lines)
